@@ -16,7 +16,7 @@ go build
 
 vmess2json使用示例
 ```
-./ddns --subscribe https://feed.v2ray.example/
+./vmess2json --subscribe https://feed.v2ray.example/
 ```
 
 将输出v2ray的Url集合，以及v2ray的config.json中outbounds数组json片段，复制json片段到outbounds数组中然后重启v2ray服务即可使用.
