@@ -82,6 +82,7 @@ func main() {
 						{
 							"email": "user@v2ray.com",
 							"id": "{{.ID}}",
+							"alterId": {{.Aid}},
 							"security": "auto"
 						}
 						]
@@ -93,23 +94,24 @@ func main() {
 					"security": "{{.TLS}}",
 					"tlsSettings": {
 						"allowInsecure": true
+					},
+					"wsSettings": {
+						"connectionReuse": true,
+						"path": "{{.Path}}"{{if .Host}},
+						"headers": {
+							"Host": "{{.Host}}"
+						}
+						{{end}}
 					}
-				},
-				"wsSettings": {
-					"connectionReuse": true,
-					"path": "{{.Path}}"{{if .Host}},
-					"headers": {
-						"Host": "{{.Host}}"
-					}
-					{{end}}
 				},
 				"mux": {
 					"enabled": true
 				},
 				"tag": "{{.Address}}"
-			},`))
+			}`))
 
-	var ret string
+	var ret []string
+	var tags []string
 	scanner := bufio.NewScanner(strings.NewReader(urls))
 	for scanner.Scan() {
 		vmess := scanner.Text()
@@ -124,13 +126,57 @@ func main() {
 			continue
 		}
 
+		tags = append(tags, result.Address)
+
 		buf := new(bytes.Buffer)
 		text.Execute(buf, result)
 
-		// fmt.Println(buf.String())
-		ret += buf.String()
+		ret = append(ret, buf.String())
 	}
 
-	fmt.Println(ret)
+	size := len(ret)
+	for i := 0; i < size; i++ {
+		fmt.Printf(ret[i])
+		if i + 1 != size {
+			fmt.Printf(",")
+		} else {
+			fmt.Println("")
+		}
+	}
+
+	fmt.Println(`
+  "routing": {
+    "domainStrategy": "IPOnDemand",
+    "balancers": [
+      {
+        "tag": "balancer",
+        "selector": [
+	`)
+
+        for i := 0; i < size; i++ {
+		fmt.Printf("          \"")
+                fmt.Printf(tags[i])
+		fmt.Printf("\"")
+                if i + 1 != size {
+                        fmt.Printf(",\n")
+                } else {
+                        fmt.Println("")
+                }
+        }
+
+	fmt.Println(`
+        ]
+      }
+    ],
+    "rules": [
+      {
+        "type": "field",
+        "network": "tcp,udp",
+        "balancerTag": "balancer"
+      }
+    ]
+  }
+`)
+
 }
 
