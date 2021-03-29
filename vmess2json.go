@@ -10,7 +10,6 @@ import (
 	"html/template"
 	"io/ioutil"
 	"net/http"
-	"net/url"
 	"os"
 	"strings"
 )
@@ -83,7 +82,6 @@ func main() {
 						{
 							"email": "user@v2ray.com",
 							"id": "{{.ID}}",
-							"alterId": {{.Aid}},
 							"security": "auto"
 						}
 						]
@@ -94,8 +92,16 @@ func main() {
 					"network": "{{.Net}}",
 					"security": "{{.TLS}}",
 					"tlsSettings": {
-					"allowInsecure": true
+						"allowInsecure": true
 					}
+				},
+				"wsSettings": {
+					"connectionReuse": true,
+					"path": "{{.Path}}"{{if .Host}},
+					"headers": {
+						"Host": "{{.Host}}"
+					}
+					{{end}}
 				},
 				"mux": {
 					"enabled": true
@@ -103,30 +109,28 @@ func main() {
 				"tag": "{{.Address}}"
 			},`))
 
+	var ret string
 	scanner := bufio.NewScanner(strings.NewReader(urls))
 	for scanner.Scan() {
 		vmess := scanner.Text()
-		url, err := url.Parse(vmess)
-		if err != nil {
-			fmt.Println(err.Error())
-			return
-		}
-		if url.Host == "" {
-			return
-		}
-
-		node, err := base64.StdEncoding.DecodeString(url.Host)
+		link := vmess[8:]
+		node, err := base64.StdEncoding.DecodeString(link)
+		fmt.Println(string(node))
 
 		var result vmessJSON
 		err = json.Unmarshal(node, &result)
 		if err != nil {
+			fmt.Println("err:", err.Error(), "link:", string(node))
 			continue
 		}
 
 		buf := new(bytes.Buffer)
 		text.Execute(buf, result)
 
-		fmt.Println(buf.String())
+		// fmt.Println(buf.String())
+		ret += buf.String()
 	}
 
+	fmt.Println(ret)
 }
+
