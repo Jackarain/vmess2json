@@ -7,16 +7,18 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"html/template"
 	"io/ioutil"
 	"net/http"
 	"os"
 	"strings"
+	"text/template"
 )
 
 var (
-	help      bool
-	subscribe string
+	help         bool
+	subscribe    string
+	file         string
+	templatefile string
 )
 
 type vmessJSON struct {
@@ -33,9 +35,16 @@ type vmessJSON struct {
 	TLS     string `json:"tls"`
 }
 
+type templateData struct {
+	Outbounds string
+	Routing   string
+}
+
 func init() {
 	flag.BoolVar(&help, "help", false, "help message")
 	flag.StringVar(&subscribe, "subscribe", "", "v2ray subscribe url")
+	flag.StringVar(&file, "file", "", "v2ray nodes, base64 encode file")
+	flag.StringVar(&templatefile, "templatefile", "", "templatefile, v2ray config.json template file")
 }
 
 func main() {
@@ -45,28 +54,41 @@ func main() {
 		return
 	}
 
-	request, err := http.NewRequest("GET", subscribe, nil)
-	if err != nil {
-		fmt.Println(err.Error())
-		return
-	}
-	v2rayHTTPClient := &http.Client{}
-	response, err := v2rayHTTPClient.Do(request)
-	if err != nil {
-		fmt.Println(err.Error())
-		return
-	}
-	defer response.Body.Close()
+	var urls string
 
-	body, _ := ioutil.ReadAll(response.Body)
-	body, err = base64.StdEncoding.DecodeString(string(body))
-	if err != nil {
-		fmt.Println(err.Error())
+	if subscribe != "" {
+		request, err := http.NewRequest("GET", subscribe, nil)
+		if err != nil {
+			fmt.Println(err.Error())
+			return
+		}
+		v2rayHTTPClient := &http.Client{}
+		response, err := v2rayHTTPClient.Do(request)
+		if err != nil {
+			fmt.Println(err.Error())
+			return
+		}
+		defer response.Body.Close()
+
+		body, _ := ioutil.ReadAll(response.Body)
+		body, err = base64.StdEncoding.DecodeString(string(body))
+		if err != nil {
+			fmt.Println(err.Error())
+			return
+		}
+		urls = string(body)
+	} else if file != "" {
+		body, _ := ioutil.ReadFile(file)
+		body, err := base64.StdEncoding.DecodeString(string(body))
+		if err != nil {
+			fmt.Println(err.Error())
+			return
+		}
+		urls = string(body)
+	} else {
+		flag.Usage()
 		return
 	}
-	urls := string(body)
-	// 输出所有vmess URL.
-	fmt.Println(urls)
 
 	// 循环输出 outbounds 数组...
 	text := template.New("test")
@@ -117,12 +139,13 @@ func main() {
 		vmess := scanner.Text()
 		link := vmess[8:]
 		node, err := base64.StdEncoding.DecodeString(link)
-		fmt.Println(string(node))
+		if err != nil {
+			continue
+		}
 
 		var result vmessJSON
 		err = json.Unmarshal(node, &result)
 		if err != nil {
-			fmt.Println("err:", err.Error(), "link:", string(node))
 			continue
 		}
 
@@ -134,38 +157,43 @@ func main() {
 		ret = append(ret, buf.String())
 	}
 
+	var outbounds string
 	size := len(ret)
 	for i := 0; i < size; i++ {
-		fmt.Printf(ret[i])
-		if i + 1 != size {
-			fmt.Printf(",")
+		outbounds = outbounds + ret[i]
+		if i+1 != size {
+			outbounds = outbounds + ","
 		} else {
-			fmt.Println("")
+			outbounds = outbounds + "\n"
 		}
 	}
 
-	fmt.Println(`
-  "routing": {
-    "domainStrategy": "IPOnDemand",
-    "balancers": [
-      {
-        "tag": "balancer",
-        "selector": [
-	`)
+	if templatefile == "" {
+		fmt.Println(outbounds)
+	}
 
-        for i := 0; i < size; i++ {
-		fmt.Printf("          \"")
-                fmt.Printf(tags[i])
-		fmt.Printf("\"")
-                if i + 1 != size {
-                        fmt.Printf(",\n")
-                } else {
-                        fmt.Println("")
-                }
-        }
+	routing := `
+	"routing": {
+		"domainStrategy": "IPOnDemand",
+		"balancers": [
+		  {
+			"tag": "balancer",
+			"selector": [
+	`
 
-	fmt.Println(`
-        ]
+	for i := 0; i < size; i++ {
+		routing = routing + "          \""
+		routing = routing + tags[i]
+		routing = routing + "\""
+		if i+1 != size {
+			routing = routing + ",\n"
+		} else {
+			routing = routing + "\n"
+		}
+	}
+
+	routing = routing +
+		`        ]
       }
     ],
     "rules": [
@@ -175,8 +203,22 @@ func main() {
         "balancerTag": "balancer"
       }
     ]
-  }
-`)
+  }`
 
+	if templatefile == "" {
+		fmt.Println(routing)
+	}
+
+	if templatefile != "" {
+		body, _ := ioutil.ReadFile(templatefile)
+		tmpl := template.New("template")
+		tmpl = template.Must(tmpl.Parse(string(body)))
+		buf := new(bytes.Buffer)
+		var data templateData
+		data.Outbounds = outbounds
+		data.Routing = routing
+		tmpl.Execute(buf, data)
+
+		fmt.Println(buf.String())
+	}
 }
-
