@@ -10,6 +10,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"text/template"
 )
@@ -21,18 +22,38 @@ var (
 	templatefile string
 )
 
+type Aid string
 type vmessJSON struct {
 	Version string `json:"v"`
 	Title   string `json:"ps"`
 	Address string `json:"add"`
 	Port    uint16 `json:"port"`
 	ID      string `json:"id"`
-	Aid     string `json:"aid"`
+	Aid     Aid    `json:"aid"`
 	Net     string `json:"net"`
 	Type    string `json:"type"`
 	Host    string `json:"host"`
 	Path    string `json:"path"`
 	TLS     string `json:"tls"`
+}
+
+func (r *Aid) UnmarshalJSON(input []byte) error {
+	var a string
+	var i int
+	switch input[0] {
+	case '"':
+		if err := json.Unmarshal(input, &a); err != nil {
+			return err
+		}
+		*r = Aid(a)
+	default:
+		if err := json.Unmarshal(input, &i); err != nil {
+			return err
+		}
+		*r = Aid(strconv.Itoa(i))
+	}
+
+	return nil
 }
 
 type templateData struct {
